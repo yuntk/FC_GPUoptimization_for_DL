@@ -154,7 +154,7 @@ run_metadata = tf.RunMetadata()
 mg = meta_graph.create_meta_graph_def(graph=ops.get_default_graph())
 
 rewrite_options = rewriter_config_pb2.RewriterConfig(
-        memory_optimization=rewriter_config_pb2.RewriterConfig.HEURISTICS)
+        memory_optimization=rewriter_config_pb2.RewriterConfig.MANUAL)
 graph_options = config_pb2.GraphOptions(rewrite_options=rewrite_options)
 
 graph = tf_optimizer.OptimizeGraph(rewrite_options, mg)

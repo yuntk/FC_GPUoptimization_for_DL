@@ -93,16 +93,17 @@ def inference(x, y_, keep_prob):
     logit = tf.nn.softmax(tf.matmul(fc1_drop, W) + b, name=scope.name)
   return logit
 
+with tf.device('/cpu:0'):
 
-x  = tf.placeholder(tf.float32, [None, 784], name='x')
-y_ = tf.placeholder(tf.float32, [None, 10],  name='y_')
-keep_prob  = tf.placeholder(tf.float32)
+ x  = tf.placeholder(tf.float32, [None, 784], name='x')
+ y_ = tf.placeholder(tf.float32, [None, 10],  name='y_')
+ keep_prob  = tf.placeholder(tf.float32)
 
 
-opt = tf.train.AdamOptimizer(1e-4)
+ opt = tf.train.AdamOptimizer(1e-4)
 
-tower_grads = []
-with tf.variable_scope(tf.get_variable_scope()):
+ tower_grads = []
+ with tf.variable_scope(tf.get_variable_scope()):
   for i in xrange(2):
     with tf.device('/gpu:%d' % i):
       logit = inference(x, y_, keep_prob)
@@ -115,7 +116,7 @@ with tf.variable_scope(tf.get_variable_scope()):
 
       tower_grads.append(grads)
 
-grad = average_gradients(tower_grads)
+ grad = average_gradients(tower_grads)
 
 train_step = opt.apply_gradients(grad)
 

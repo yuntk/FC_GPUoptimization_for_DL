@@ -131,16 +131,21 @@ correct_prediction = tf.equal(tf.argmax(logit, 1), tf.argmax(y_, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32), name='accuracy')
 
 # Training steps
-with tf.Session() as sess:
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True
+with tf.Session(config=config) as sess:
   sess.run(tf.global_variables_initializer())
 
   max_steps = FLAGS.step
-
-  for step in range(max_steps):
-    batch_xs, batch_ys = mnist.train.next_batch(FLAGS.batch_size)
+  step = 0
+  while True:
+    bs= int(input("batch_size :"))
+    if bs is 0:
+	break
+    batch_xs, batch_ys = mnist.train.next_batch(bs)
     _, loss = sess.run([train_step, cross_entropy], feed_dict={x: batch_xs, y_: batch_ys, keep_prob: 0.5})
-    if step % 10 == 0:
-       print("step = ", step, "\tloss = ", loss)
+    print("step = ", step, "\tloss = ", loss)
+    step+=1
     
   #print(max_steps, sess.run(accuracy, feed_dict={x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))
 

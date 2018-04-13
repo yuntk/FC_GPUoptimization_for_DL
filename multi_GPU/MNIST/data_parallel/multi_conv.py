@@ -1,11 +1,20 @@
 from __future__ import print_function
 
-import input_data
+from tensorflow.examples.tutorials.mnist import input_data
 import time
 import numpy as np
 mnist = input_data.read_data_sets("/home/deepl/FC/multi-GPU/MNIST/data_mnist", one_hot=True)
 
 import tensorflow as tf
+
+FLAGS = tf.app.flags.FLAGS
+
+tf.app.flags.DEFINE_integer('num_gpus', 1,
+                            """How many GPUs to use.""")
+tf.app.flags.DEFINE_integer('batch_size', 64,
+                                """Batch size for each iteration""")
+tf.app.flags.DEFINE_integer('step', 1000,
+                                """number of iteration""")
 
 def _variable_on_cpu(name, shape, initializer):
     with tf.device('/cpu:0'):
@@ -37,27 +46,27 @@ def average_gradients(tower_grads):
   return average_grads
 
 
-def inference(x, y_, keep_prob):
+def inference(x, keep_prob):
   x_image = tf.reshape(x, [-1, 28, 28, 1])
 
   with tf.variable_scope("conv1") as scope:
-    W = _variable_on_cpu(name = 'W', 
-                              shape = [5, 5, 1, 32], 
+    W = _variable_on_cpu(name = 'W',
+                              shape = [5, 5, 1, 32],
                               initializer= tf.truncated_normal_initializer(stddev=0.1))
-    b = _variable_on_cpu(name = 'b', 
-                              shape = [32], 
+    b = _variable_on_cpu(name = 'b',
+                              shape = [32],
                               initializer= tf.truncated_normal_initializer(stddev=0.1))
 
     conv1 = tf.nn.relu(conv2d(x_image, W) + b, name=scope.name)
   pool1 = max_pool_2x2(conv1, n = 'pool1')
 
   with tf.variable_scope("conv2") as scope:
-    W = _variable_on_cpu(name = 'W', 
-                              shape = [5, 5, 32, 64], 
+    W = _variable_on_cpu(name = 'W',
+                              shape = [5, 5, 32, 64],
                               initializer= tf.truncated_normal_initializer(stddev=0.1))
-    
-    b = _variable_on_cpu(name = 'b', 
-                              shape = [64], 
+
+    b = _variable_on_cpu(name = 'b',
+                              shape = [64],
                               initializer= tf.truncated_normal_initializer(stddev=0.1))
 
     conv2 = tf.nn.relu(conv2d(pool1, W) + b, name = scope.name)
@@ -68,30 +77,26 @@ def inference(x, y_, keep_prob):
   pool2_flat = tf.reshape(pool2, [-1, 7*7*64])
 
   with tf.variable_scope("fc1") as scope:
-    W = _variable_on_cpu(name = 'W', 
-                              shape = [7 * 7 * 64, 1024], 
+    W = _variable_on_cpu(name = 'W',
+                              shape = [7 * 7 * 64, 1024],
                               initializer= tf.truncated_normal_initializer(stddev=0.1))
-    b = _variable_on_cpu(name = 'b', 
-                              shape = [1024], 
+    b = _variable_on_cpu(name = 'b',
+                              shape = [1024],
                               initializer= tf.truncated_normal_initializer(stddev=0.1))
 
     fc1 = tf.nn.relu(tf.matmul(pool2_flat, W) + b, name = scope.name)
 
   # Dropout
-  
+
   fc1_drop = tf.nn.dropout(fc1, keep_prob)
 
   with tf.variable_scope("softmax_linear") as scope:
-    W = _variable_on_cpu(name = 'W', 
-                                shape = [1024,10], 
-                                initializer= tf.truncated_normal_initializer(stddev=0.1))
-      
-    b = _variable_on_cpu(name = 'b', 
-                                shape = [10], 
+    W = _variable_on_cpu(name = 'W',
+                                shape = [1024,10],
                                 initializer= tf.truncated_normal_initializer(stddev=0.1))
 
-    logit = tf.nn.softmax(tf.matmul(fc1_drop, W) + b, name=scope.name)
-  return logit
+                                initializer= tf.truncated_normal_initializer(stddev=0.1))
+
 
 with tf.device('/cpu:0'):
 
@@ -99,16 +104,18 @@ with tf.device('/cpu:0'):
  y_ = tf.placeholder(tf.float32, [None, 10],  name='y_')
  keep_prob  = tf.placeholder(tf.float32)
 
+ X_s = tf.split(x,FLAGS.num_gpus)
+ Y_s = tf.split(y_,FLAGS.num_gpus)
 
  opt = tf.train.AdamOptimizer(1e-4)
 
  tower_grads = []
  with tf.variable_scope(tf.get_variable_scope()):
-  for i in xrange(2):
+  for i in xrange(FLAGS.num_gpus):
     with tf.device('/gpu:%d' % i):
-      logit = inference(x, y_, keep_prob)
+      logit = inference(X_s[i], keep_prob)
 
-      cross_entropy = tf.reduce_mean(-tf.reduce_sum(y_ * tf.log(logit), reduction_indices=[1]))
+      cross_entropy = tf.reduce_mean(-tf.reduce_sum(Y_s[i] * tf.log(logit), reduction_indices=[1]))
 
       tf.get_variable_scope().reuse_variables()
 
@@ -128,14 +135,13 @@ accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32), name='accurac
 with tf.Session() as sess:
   sess.run(tf.global_variables_initializer())
 
-  max_steps = 1000
+  max_steps = FLAGS.step
   latency = []
 
   for step in range(max_steps):
-    batch_xs, batch_ys = mnist.train.next_batch(10)
+    batch_xs, batch_ys = mnist.train.next_batch(FLAGS.batch_size * FLAGS.num_gpus)
     st = time.time()
     _, loss = sess.run([train_step, cross_entropy], feed_dict={x: batch_xs, y_: batch_ys, keep_prob: 0.5})
-    #print("step = ", step, "\tloss = ", loss)
-    latency.append(time.time()-st)
-  print(max_steps, sess.run(accuracy, feed_dict={x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))
-
+    if step % 10 == 0:
+        print("step = ", step, "\tloss = ", loss)
+  #print(max_steps, sess.run(accuracy, feed_dict={x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))

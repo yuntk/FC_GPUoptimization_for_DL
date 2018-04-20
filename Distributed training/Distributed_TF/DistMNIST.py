@@ -8,7 +8,22 @@ import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
 from tensorflow.python.client import device_lib
 
-FLAGS = None
+FLAGS = tf.app.flags.FLAGS
+tf.app.flags.DEFINE_integer('num_gpus', 1,
+                            """How many GPUs to use.""")
+tf.app.flags.DEFINE_integer('batch_size', 64,
+                                """Batch size for each iteration""")
+tf.app.flags.DEFINE_integer('step', 1000,
+                                """number of iteration""")
+tf.app.flags.DEFINE_string('ps_hosts', 'localhost:2222',
+				"""ps_hosts list""")
+tf.app.flags.DEFINE_string('worker_hosts', 'localhost:2223',
+                                """worker_hosts list""")
+tf.app.flags.DEFINE_string('job_name', 'ps',
+                                """One of 'ps', 'worker'""")
+tf.app.flags.DEFINE_integer('task_index', 0,
+                                """Index of task within the job""")
+
 
 def check_available_gpus():
     local_devices = device_lib.list_local_devices()
@@ -59,7 +74,7 @@ def main(_):
     print (ps_hosts, worker_hosts, num_gpus)
 
     cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts })
- 
+
     server = tf.train.Server(cluster, 
                            job_name=FLAGS.job_name,
                            task_index=FLAGS.task_index)
@@ -74,10 +89,10 @@ def main(_):
                     worker_device="/job:worker/task:%d" % (FLAGS.task_index),
                     cluster=cluster)):
 
-            training_epochs = 10
-            batch_size = 1000
+            training_epochs = FLAGS.step
+            batch_size = FLAGS.batch_size * FLAGS.num_gpus
             learning_rate = 0.001
-            gpu_num = check_available_gpus()
+            gpu_num = FLAGS.num_gpus
             #gpu_num = 2
             
             mnist = input_data.read_data_sets("./input_data/", one_hot=True)
@@ -93,8 +108,8 @@ def main(_):
             Each GPU learns different input datas each other
             '''
             losses = []
-            X_A = tf.split(X, int(gpu_num))
-            Y_A = tf.split(Y, int(gpu_num))
+            X_A = tf.split(X, gpu_num)
+            Y_A = tf.split(Y, gpu_num)
 
             for gpu_id in range(int(gpu_num)):
                 with tf.device(tf.DeviceSpec(device_type="GPU", device_index=gpu_id)):
@@ -175,8 +190,6 @@ def main(_):
                 total_cost = 0
 
                 for i in range(total_batch):
-                    # 각 batch size 마다 weight들이 업데이트 됨.
-                    # 이 부분에서 서버간 통신을 통해 파라미터 업데이트 해야 함
                     batch_xs, batch_ys = mnist.train.next_batch(batch_size)
                     batch_xs = batch_xs.reshape(-1, 28, 28, 1)
 
@@ -208,41 +221,6 @@ def main(_):
                     }))
         
 
-                
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.register("type", "bool", lambda v: v.lower() == "true")
-  # Flags for defining the tf.train.ClusterSpec
-    parser.add_argument(
-        "--ps_hosts",
-        type=str,
-        default="",
-        help="Comma-separated list of hostname:port pairs"
-    )
-    parser.add_argument(
-        "--worker_hosts",
-        type=str,
-        default="",
-        help="Comma-separated list of hostname:port pairs"
-    )
-    parser.add_argument(
-        "--job_name",
-        type=str,
-        default="",
-        help="One of 'ps', 'worker'"
-    )
-  # Flags for defining the tf.train.Server
-    parser.add_argument(
-        "--task_index",
-        type=int,
-        default=0,
-        help="Index of task within the job"
-    )
-    parser.add_argument(
-        "--num_gpus",
-        type=int,
-        default=0,
-        help="Index of task within the job"
-    )
-    FLAGS, unparsed = parser.parse_known_args()
-    tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
+     tf.app.run(main=main)
